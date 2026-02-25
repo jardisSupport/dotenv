@@ -5,6 +5,12 @@ on:
   pull_request_review_comment:
     types: [created]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
+
 jobs:
   claude:
     if: contains(github.event.comment.body, '@claude')
@@ -31,6 +37,6 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-sonnet-4-6
+          claude_args: "--model claude-sonnet-4-6"
         env:
           WORKING_DIRECTORY: project
