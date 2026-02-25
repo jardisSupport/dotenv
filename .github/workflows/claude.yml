@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: project
 
       - uses: actions/checkout@v4
         with:
@@ -28,7 +26,6 @@ jobs:
 
       - name: Link shared configuration
         run: |
-          cd project
           mkdir -p .claude/skills .claude/agents
           ln -sf $GITHUB_WORKSPACE/.claude-shared/skills/* .claude/skills/ || true
           ln -sf $GITHUB_WORKSPACE/.claude-shared/agents/* .claude/agents/ || true
@@ -37,6 +34,4 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--model claude-sonnet-4-6"
-        env:
-          WORKING_DIRECTORY: project
+          github_token: ${{ secrets.GITHUB_TOKEN }}
