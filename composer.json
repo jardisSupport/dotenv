@@ -1,6 +1,5 @@
 {
     "name": "jardissupport/dotenv",
-    "version": "1.0.0",
     "description": "Advanced functions dotEnv tool for reading .env files for standard global and protected contexts",
     "type": "library",
     "license": "PolyForm-Noncommercial-1.0.0",
@@ -23,12 +22,12 @@
     },
     "autoload": {
         "psr-4": {
-            "JardisSupport\\DotEnv\\": "src/"
+            "JardisSupport\DotEnv\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "JardisSupport\\DotEnv\\Tests\\": "tests/"
+            "JardisSupport\DotEnv\Tests\": "tests/"
         }
     },
     "homepage": "https://github.com/jardisSupport/dotenv",
