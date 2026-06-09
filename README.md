@@ -7,9 +7,9 @@
 [![PSR-12](https://img.shields.io/badge/Code%20Style-PSR--12-blue.svg)](phpcs.xml)
 [![Coverage](https://img.shields.io/badge/Coverage-93.98%25-brightgreen.svg)](https://github.com/jardisSupport/dotenv)
 
-> Part of the **[Jardis Business Platform](https://jardis.io)** — Enterprise-grade PHP components for Domain-Driven Design
+> Part of **[Jardis](https://jardis.io)** — the Domain-Driven Design platform for PHP. You model your domain; Jardis generates the production-ready hexagonal code (DTOs, Command/Query handlers, repositories, persistence). This package is part of the open-source foundation that generated code runs on.
 
-Environment file loader with cascading overrides, variable interpolation, type casting, and include directives. Goes beyond simple .env parsing — supports public and private loading modes, nested variable references, and an extensible cast chain.
+A .env loader for PHP with cascading overrides, variable interpolation, type casting, and include directives. Goes beyond simple .env parsing — supports public and private loading modes, nested variable references, and an extensible cast chain.
 
 ---
 
@@ -22,7 +22,7 @@ Environment file loader with cascading overrides, variable interpolation, type c
 - **Home Path Expansion** — `~/` is expanded to the OS home directory in both loading modes
 - **Include Directives** — `load(.env.database)` and `load?(.env.optional)` split configuration across multiple files
 - **Circular Include Detection** — prevents infinite include loops with a typed `CircularEnvIncludeException`
-- **Docker `_FILE` Secret Resolution** — `DB_PASSWORD_FILE=/run/secrets/db_password` reads the file and exposes the content as `DB_PASSWORD`. Works with Docker Swarm, Kubernetes mounted secrets, and any file-based secret store. Combines seamlessly with [`jardissupport/secret`](https://github.com/jardisSupport/secret) — a `_FILE` that contains `secret(aes:...)` is decrypted automatically through the cast chain
+- **Docker `_FILE` Secret Resolution** — `DB_PASSWORD_FILE=/run/secrets/db_password` reads the file and exposes the content as `DB_PASSWORD`. Works with Docker Swarm, Kubernetes mounted secrets, and any file-based secret store. Combines with [`jardissupport/secret`](https://github.com/jardisSupport/secret) — a `_FILE` that contains `secret(aes:...)` is decrypted automatically through the cast chain
 - **Extensible via `addHandler()`** — prepend or append custom cast handlers; remove built-in ones via `removeHandler()`
 
 ---
