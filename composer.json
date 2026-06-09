@@ -41,11 +41,13 @@
         "dotenv",
         "env",
         "environment",
+        "environment-variables",
+        "configuration",
         "loader",
-        "context",
-        "domain driven design",
-        "jardisSupport",
-        "contract",
+        "php",
+        "domain-driven-design",
+        "hexagonal-architecture",
+        "jardissupport",
         "jardis"
     ]
 }
