@@ -142,13 +142,13 @@ This package is licensed under the [MIT License](LICENSE.md).
 **[Jardis](https://jardis.io)** · [Documentation](https://docs.jardis.io) · [Headgent](https://headgent.com)
 
 <!-- BEGIN jardis/dev-skills README block — do not edit by hand -->
-## KI-gestützte Entwicklung
+## AI-Assisted Development
 
-Dieses Package liefert einen Skill für Claude Code, Cursor, Continue und Aider mit. Installation im Konsumentenprojekt:
+This package ships with a skill for Claude Code, Cursor, Continue, and Aider. Install it in your consuming project:
 
 ```bash
 composer require --dev jardis/dev-skills
 ```
 
-Mehr Details: <https://docs.jardis.io/en/skills>
+More details: <https://docs.jardis.io/en/skills>
 <!-- END jardis/dev-skills README block -->

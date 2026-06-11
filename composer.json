@@ -1,6 +1,6 @@
 {
     "name": "jardissupport/dotenv",
-    "homepage": "https://docs.jardis.io/en/support/dotenv",
+    "homepage": "https://jardis.io",
     "description": "Environment file loader with cascading overrides, variable interpolation, type casting, and include directives",
     "type": "library",
     "license": "MIT",
@@ -8,8 +8,8 @@
     "prefer-stable": true,
     "authors": [
         {
-            "name": "Jardis Core Development",
-            "email": "jardisCore@headgent.dev"
+            "name": "Jardis Development",
+            "email": "jardisDev@headgent.com"
         }
     ],
     "require": {
@@ -33,8 +33,10 @@
         "psr-4": {
             "JardisSupport\\DotEnv\\Tests\\": "tests/"
         }
-    },    "support": {
+    },
+    "support": {
         "issues": "https://github.com/jardisSupport/dotenv/issues",
+        "docs": "https://docs.jardis.io/en/support/dotenv",
         "email": "jardisDev@headgent.com"
     },
     "keywords": [
