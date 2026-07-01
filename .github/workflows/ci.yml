@@ -34,12 +34,13 @@ jobs:
     name: phpcs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup environment
         run: cp .env.example .env
 
       - name: Login to Docker Hub
+        if: ${{ github.actor != 'dependabot[bot]' }}
         env:
           DOCKER_CONFIG: /tmp/.docker
         run: |
@@ -66,12 +67,13 @@ jobs:
     name: phpstan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup environment
         run: cp .env.example .env
 
       - name: Login to Docker Hub
+        if: ${{ github.actor != 'dependabot[bot]' }}
         env:
           DOCKER_CONFIG: /tmp/.docker
         run: |
@@ -98,12 +100,13 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup environment
         run: cp .env.example .env
 
       - name: Login to Docker Hub
+        if: ${{ github.actor != 'dependabot[bot]' }}
         env:
           DOCKER_CONFIG: /tmp/.docker
         run: |
