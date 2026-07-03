@@ -2,6 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "composer"
     directory: "/"
+    target-branch: develop
     schedule:
       interval: "monthly"
     reviewers:
@@ -9,6 +10,7 @@ updates:
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: develop
     schedule:
       interval: "monthly"
     reviewers:
