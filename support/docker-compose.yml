@@ -5,7 +5,6 @@ networks:
 services:
   phpcli:
     image: ${DOCKER_HUB:-headgent}/phpcli:${PHP_VERSION:-8.3}
-    container_name: phpcli
     networks:
       - dotenv-network
     environment:
