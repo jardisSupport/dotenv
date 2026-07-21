@@ -9,7 +9,7 @@ next: [support-secret]
 ---
 
 # DOTENV_COMPONENT_SKILL
-> jardissupport/dotenv v1.0.0 | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
+> jardissupport/dotenv | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
 
 ## ARCHITECTURE
 ```
@@ -112,7 +112,6 @@ $config = $dotEnv->loadPrivate('/path/to/app');
 | `CircularEnvIncludeException` | a.env → b.env → a.env | `getIncludeStack()` |
 | `EnvFileNotFoundException` | required `load()` missing or `_FILE` path not found | `getFilePath()` |
 | `EnvFileNotReadableException` | file not readable | `getFilePath()` |
-| `EnvParseException` | syntax error (defined, not thrown currently) | `getFilePath()`, `getLineNumber()` |
 
 NS: `JardisSupport\DotEnv\Exception` — all extend `DotEnvException`.
 
