@@ -11,16 +11,6 @@ next: [support-secret]
 # DOTENV_COMPONENT_SKILL
 > jardissupport/dotenv | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
 
-## ARCHITECTURE
-```
-DotEnv                    facade, two-stage APP_ENV loading
-  LoadFilesFromPath        file discovery (getBaseFiles / getEnvFiles / __invoke)
-  LoadValuesFromFiles      parser, include cascade, _FILE resolution, VariableRegistry population
-    ParseLoadDirective     load() / load?() parser
-    CastTypeHandler        type-cast chain orchestrator (internal, holds VariableRegistry)
-      VariableRegistry     central raw-value store for ${VAR} and ~ resolution
-```
-
 **Constructor:**
 ```php
 new DotEnv(?LoadFilesFromPath $fileFinder = null, ?LoadValuesFromFiles $fileContentReader = null)
@@ -73,7 +63,6 @@ $registry->set('KEY', 'raw_value');   // raw string before casting
 $registry->get('KEY');                // Registry first, getenv() fallback
 $registry->reset();                   // clear all entries
 ```
-Populated in `LoadValuesFromFiles` for every variable (before casting). Used by cascade `buildCascadeFiles` for APP_ENV.
 
 ## INCLUDE SYSTEM
 ```env
@@ -84,7 +73,7 @@ load?(.env.local)             # optional — silent skip
 - Relative paths resolved from directory of the including file
 - Each include cascades: base → `.local` → `.{APP_ENV}` → `.{APP_ENV}.local`
 - APP_ENV read from VariableRegistry (works in both modes)
-- Circular reference detection via `realpath()` stack → `CircularEnvIncludeException`
+- Circular reference detection → `CircularEnvIncludeException`
 
 ## FILE SECRET RESOLUTION (`_FILE` PATTERN)
 ```env
