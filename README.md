@@ -24,6 +24,8 @@ A .env loader for PHP with cascading overrides, variable interpolation, type cas
 - **Circular Include Detection** — prevents infinite include loops with a typed `CircularEnvIncludeException`
 - **Docker `_FILE` Secret Resolution** — `DB_PASSWORD_FILE=/run/secrets/db_password` reads the file and exposes the content as `DB_PASSWORD`. Works with Docker Swarm, Kubernetes mounted secrets, and any file-based secret store. Combines with [`jardissupport/secret`](https://github.com/jardisSupport/secret) — a `_FILE` that contains `secret(aes:...)` is decrypted automatically through the cast chain
 - **Extensible via `addHandler()`** — prepend or append custom cast handlers; remove built-in ones via `removeHandler()`
+- **Raw-Key Cast Exemption** — `addRawKeys()` marks keys/suffixes (e.g. `_PASSWORD`) that must skip the cast chain, so a credential like `DB_PASSWORD=false` survives as the string `'false'` instead of `bool(false)`
+- **String Input** — `loadPublicFromString()`/`loadPrivateFromString()` parse `.env`-formatted content that never touched disk (e.g. a secrets manager payload), reusing the same cast chain, variable substitution and `_FILE` resolution as file loading
 
 ---
 
@@ -125,6 +127,52 @@ $dotEnv->addHandler(
 );
 $config = $dotEnv->loadPrivate('/path/to/app');
 // DB_PASSWORD → file read → secret() decrypted → plaintext
+```
+
+### Raw Keys — Credentials That Must Never Be Cast
+
+`false`, `0` or `123456` as a password are the cast chain's blind spot: it turns them into
+`bool`/`int` before the caller ever sees the intended string. `addRawKeys()` registers
+keys/suffixes (case-insensitive, exact or suffix match, no substring match) that bypass casting
+entirely — the raw file/string value is returned as-is:
+
+```php
+$dotEnv = new DotEnv();
+$dotEnv->addRawKeys(['_PASSWORD', '_TOKEN']); // suffixes ...
+$dotEnv->addRawKeys(['API_KEY']);             // ... or an exact key name
+
+// .env: DB_PASSWORD=false
+$config = $dotEnv->loadPrivate('/path/to/app');
+var_dump($config['DB_PASSWORD']); // string(5) "false" — not bool(false)
+```
+
+The check applies at both cast sites: a plain `KEY=value` line and a `KEY_FILE=...` secret file —
+for the latter the **resolved** key is checked (`DB_PASSWORD_FILE` → rule matches `DB_PASSWORD`).
+Registrations accumulate and de-duplicate; there is no `removeRawKeys()`.
+
+### String Input — Loading From a Secrets Manager
+
+`loadPublicFromString()`/`loadPrivateFromString()` accept `.env`-formatted content directly,
+useful when the content comes from somewhere other than a file — AWS Secrets Manager, for example:
+
+```php
+$secretsManagerPayload = "DB_HOST=prod-db\nDB_PASSWORD=s3cret!\n";
+
+$config = (new DotEnv())->loadPrivateFromString($secretsManagerPayload);
+```
+
+Behaves like file loading (same cast chain, `${VAR}` substitution, `_FILE` resolution, raw-key
+exemption) with two differences dictated by having no file on disk:
+
+- There is **no `APP_ENV` cascade** — a string is a single source, not a directory of variants.
+- A `load()`/`load?()` directive throws `IncludeNotSupportedException` — a string has no
+  file-system context to resolve an include against.
+
+A relative `KEY_FILE=...` path needs an explicit base directory to resolve against; pass it as
+the second argument. An absolute path never needs one:
+
+```php
+$dotEnv->loadPrivateFromString($content, baseDir: '/path/to/secrets-dir');
 ```
 
 ## Documentation
