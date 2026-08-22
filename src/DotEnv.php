@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace JardisSupport\DotEnv;
 
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
+use JardisSupport\DotEnv\Handler\MatchesRawKey;
 use JardisSupport\DotEnv\Exception\CircularEnvIncludeException;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
+use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
 use JardisSupport\DotEnv\Reader\LoadFilesFromPath;
 use JardisSupport\DotEnv\Reader\LoadValuesFromFiles;
+use JardisSupport\DotEnv\Reader\LoadValuesFromString;
 use JardisSupport\Contract\DotEnv\DotEnvInterface;
 
 /**
@@ -19,15 +22,28 @@ class DotEnv implements DotEnvInterface
 {
     private LoadFilesFromPath $loadFilesFromPath;
     private LoadValuesFromFiles $loadValuesFromFiles;
+    private LoadValuesFromString $loadValuesFromString;
     private CastTypeHandler $castTypeHandler;
+    private MatchesRawKey $matchesRawKey;
 
     public function __construct(
         ?LoadFilesFromPath $fileFinder = null,
-        ?LoadValuesFromFiles $fileContentReader = null
+        ?LoadValuesFromFiles $fileContentReader = null,
+        ?LoadValuesFromString $stringContentReader = null,
+        ?MatchesRawKey $matchesRawKey = null
     ) {
         $this->loadFilesFromPath = $fileFinder ?? new LoadFilesFromPath();
         $this->castTypeHandler = new CastTypeHandler();
-        $this->loadValuesFromFiles = $fileContentReader ?? new LoadValuesFromFiles($this->castTypeHandler);
+        $this->matchesRawKey = $matchesRawKey ?? new MatchesRawKey();
+        $this->loadValuesFromFiles = $fileContentReader ?? new LoadValuesFromFiles(
+            $this->castTypeHandler,
+            null,
+            $this->matchesRawKey
+        );
+        $this->loadValuesFromString = $stringContentReader ?? new LoadValuesFromString(
+            $this->castTypeHandler,
+            $this->matchesRawKey
+        );
     }
 
     /**
@@ -89,6 +105,51 @@ class DotEnv implements DotEnvInterface
     public function removeHandler(string $handlerClass): void
     {
         $this->castTypeHandler->removeCastTypeClass($handlerClass);
+    }
+
+    /**
+     * Registers keys/suffixes (case-insensitive) that must skip the cast chain and survive as
+     * raw strings — e.g. credential suffixes like `_PASSWORD` where `false`/`123456` must not
+     * become bool/int. Accumulates and de-duplicates; there is no remove.
+     *
+     * @param array<string> $keysOrSuffixes
+     */
+    public function addRawKeys(array $keysOrSuffixes): void
+    {
+        $this->matchesRawKey->addRawKeys($keysOrSuffixes);
+    }
+
+    /**
+     * Loads .env-formatted content from a string and publishes it like loadPublic() does.
+     * No APP_ENV cascade; a load()/load?() directive is a hard error (no file-system context).
+     *
+     * @param string $content .env-formatted content (e.g. from a secrets manager)
+     * @param string|null $baseDir Base directory for resolving relative KEY_FILE paths; required
+     *                             if the content contains a KEY_FILE with a relative path
+     * @throws IncludeNotSupportedException
+     * @throws EnvFileNotFoundException
+     * @throws EnvFileNotReadableException
+     */
+    public function loadPublicFromString(string $content, ?string $baseDir = null): void
+    {
+        ($this->loadValuesFromString)($content, true, $baseDir);
+    }
+
+    /**
+     * Loads .env-formatted content from a string and returns an isolated array like
+     * loadPrivate() does. No APP_ENV cascade; a load()/load?() directive is a hard error.
+     *
+     * @param string $content .env-formatted content (e.g. from a secrets manager)
+     * @param string|null $baseDir Base directory for resolving relative KEY_FILE paths; required
+     *                             if the content contains a KEY_FILE with a relative path
+     * @return array<string, mixed>
+     * @throws IncludeNotSupportedException
+     * @throws EnvFileNotFoundException
+     * @throws EnvFileNotReadableException
+     */
+    public function loadPrivateFromString(string $content, ?string $baseDir = null): array
+    {
+        return ($this->loadValuesFromString)($content, false, $baseDir);
     }
 
     private function resolveAppEnv(): ?string
