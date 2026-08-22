@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace JardisSupport\DotEnv\Reader;
 
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
+use JardisSupport\DotEnv\Handler\MatchesRawKey;
 use JardisSupport\DotEnv\Exception\CircularEnvIncludeException;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
@@ -17,16 +18,26 @@ class LoadValuesFromFiles
 {
     private CastTypeHandler $castTypeHandler;
     private ParseLoadDirective $parseLoadDirective;
+    private LoadValuesFromRows $loadValuesFromRows;
 
     /** @var array<string> Stack of files currently being loaded for circular reference detection */
     private array $includeStack = [];
 
     public function __construct(
         CastTypeHandler $castTypeHandler,
-        ?ParseLoadDirective $parseLoadDirective = null
+        ?ParseLoadDirective $parseLoadDirective = null,
+        ?MatchesRawKey $matchesRawKey = null,
+        ?LoadValuesFromRows $loadValuesFromRows = null
     ) {
         $this->castTypeHandler = $castTypeHandler;
         $this->parseLoadDirective = $parseLoadDirective ?? new ParseLoadDirective();
+        $this->loadValuesFromRows = $loadValuesFromRows ?? new LoadValuesFromRows(
+            $castTypeHandler,
+            $this->parseLoadDirective,
+            $matchesRawKey,
+            fn(array $directive, bool $public, ?string $baseDir): array =>
+                $this->processInclude($directive, $public, (string) $baseDir)
+        );
     }
 
     /**
@@ -103,52 +114,7 @@ class LoadValuesFromFiles
      */
     protected function loadFileValues(array $rows, bool $public, string $baseDir): array
     {
-        $result = [];
-
-        foreach ($rows as $row) {
-            $trimmedRow = trim($row);
-
-            // Skip comments
-            if (strpos($trimmedRow, '#') === 0) {
-                continue;
-            }
-
-            // Check for load directive
-            $loadDirective = ($this->parseLoadDirective)($trimmedRow);
-
-            if ($loadDirective !== null) {
-                $includeResult = $this->processInclude($loadDirective, $public, $baseDir);
-                $result = array_merge($result, $includeResult);
-                continue;
-            }
-
-            // Skip lines without '=' (not a valid KEY=VALUE line)
-            if (strpos($row, '=') === false) {
-                continue;
-            }
-
-            list($key, $value) = explode('=', $row, 2);
-            $key = trim($key);
-            $value = $value !== '' ? trim($value) : $value;
-
-            // Resolve _FILE suffix: read file content as value
-            if (str_ends_with($key, '_FILE') && strlen($key) > 5) {
-                $fileResult = $this->resolveFileValue($key, $value, $public, $baseDir);
-                $result = array_merge($result, $fileResult);
-                continue;
-            }
-
-            $this->castTypeHandler->getRegistry()->set($key, $value);
-            $typeCastValue = ($this->castTypeHandler)($value);
-
-            if ($public) {
-                $this->publish($key, $value, $typeCastValue);
-            } else {
-                $result[$key] = $typeCastValue;
-            }
-        }
-
-        return $result;
+        return ($this->loadValuesFromRows)($rows, $public, $baseDir);
     }
 
     /**
@@ -225,68 +191,5 @@ class LoadValuesFromFiles
 
         // Relative path - resolve relative to base directory
         return $baseDir . '/' . $path;
-    }
-
-    /**
-     * Resolve a _FILE key: read the file and register under the key without _FILE suffix.
-     *
-     * @return array<string, mixed>
-     * @throws EnvFileNotFoundException
-     * @throws EnvFileNotReadableException
-     */
-    private function resolveFileValue(string $fileKey, string $filePath, bool $public, string $baseDir): array
-    {
-        $resolvedKey = substr($fileKey, 0, -5);
-
-        // Resolve relative paths from the including file's directory
-        if ($filePath !== '' && $filePath[0] !== '/') {
-            $filePath = $baseDir . '/' . $filePath;
-        }
-
-        if (!file_exists($filePath)) {
-            throw new EnvFileNotFoundException($filePath);
-        }
-
-        if (!is_readable($filePath)) {
-            throw new EnvFileNotReadableException($filePath);
-        }
-
-        $value = trim(file_get_contents($filePath) ?: '');
-
-        $this->castTypeHandler->getRegistry()->set($resolvedKey, $value);
-        $typeCastValue = ($this->castTypeHandler)($value);
-
-        if ($public) {
-            $this->publish($resolvedKey, $value, $typeCastValue);
-            return [];
-        }
-
-        return [$resolvedKey => $typeCastValue];
-    }
-
-    /**
-     * Publishes a key/value pair to the OS environment and PHP superglobals.
-     *
-     * By design, putenv() always receives the raw string value because the OS environment
-     * only supports strings. getenv() will therefore always return a string (e.g. "true", "123").
-     * $_ENV and $_SERVER receive the type-cast value (e.g. bool(true), int(123)) — except for
-     * arrays, which are stored as their raw string representation since arrays cannot be serialised
-     * into an environment variable.
-     *
-     * This intentional difference between putenv()/getenv() and $_ENV/$_SERVER is a technical
-     * constraint of POSIX environment variables and cannot be resolved without lossy conversions.
-     * Callers that need typed values should read from $_ENV or $_SERVER; callers that rely on
-     * getenv() will always receive strings and must cast manually if needed.
-     *
-     * @param string $key      The environment variable name.
-     * @param string $value    The raw string value (as read from the .env file).
-     * @param mixed  $castValue The type-cast value after the full handler chain.
-     */
-    protected function publish(string $key, string $value, mixed $castValue): void
-    {
-        $publishValue = is_array($castValue) ? $value : $castValue;
-        putenv("$key=$value");
-        $_ENV[$key] = $publishValue;
-        $_SERVER[$key] = $publishValue;
     }
 }
