@@ -142,7 +142,11 @@ class LoadValuesFromRows
     private function assignValue(string $key, string $value, bool $public): array
     {
         $this->castTypeHandler->getRegistry()->set($key, $value);
-        $typeCastValue = ($this->matchesRawKey)($key) ? $value : ($this->castTypeHandler)($value);
+
+        // Raw keys skip the casts but still pass through registered value handlers.
+        $typeCastValue = ($this->matchesRawKey)($key)
+            ? $this->castTypeHandler->resolveRawValue($value)
+            : ($this->castTypeHandler)($value);
 
         if ($public) {
             $this->publish($key, $value, $typeCastValue);

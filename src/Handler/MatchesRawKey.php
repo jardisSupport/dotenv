@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace JardisSupport\DotEnv\Handler;
 
 /**
- * Tracks a case-insensitive set of keys/suffixes that must never pass through the cast chain
- * (e.g. credential values that must survive as raw strings). Suffix and exact match share one
+ * Tracks a case-insensitive set of keys/suffixes whose values skip the casts and survive as
+ * raw strings (registered value handlers still run for them). Suffix and exact match share one
  * check: an exact key is a suffix equal to the whole string.
  */
 class MatchesRawKey

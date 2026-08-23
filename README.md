@@ -24,7 +24,7 @@ A .env loader for PHP with cascading overrides, variable interpolation, type cas
 - **Circular Include Detection** — prevents infinite include loops with a typed `CircularEnvIncludeException`
 - **Docker `_FILE` Secret Resolution** — `DB_PASSWORD_FILE=/run/secrets/db_password` reads the file and exposes the content as `DB_PASSWORD`. Works with Docker Swarm, Kubernetes mounted secrets, and any file-based secret store. Combines with [`jardissupport/secret`](https://github.com/jardisSupport/secret) — a `_FILE` that contains `secret(aes:...)` is decrypted automatically through the cast chain
 - **Extensible via `addHandler()`** — prepend or append custom cast handlers; remove built-in ones via `removeHandler()`
-- **Raw-Key Cast Exemption** — `addRawKeys()` marks keys/suffixes (e.g. `_PASSWORD`) that must skip the cast chain, so a credential like `DB_PASSWORD=false` survives as the string `'false'` instead of `bool(false)`
+- **Raw-Key Cast Exemption** — `addRawKeys()` marks keys/suffixes (e.g. `_PASSWORD`) whose values skip the built-in casts, so a credential like `DB_PASSWORD=false` survives as the string `'false'` instead of `bool(false)`. Handlers registered via `addHandler()` (e.g. secret decryption) still run for these keys
 - **String Input** — `loadPublicFromString()`/`loadPrivateFromString()` parse `.env`-formatted content that never touched disk (e.g. a secrets manager payload), reusing the same cast chain, variable substitution and `_FILE` resolution as file loading
 
 ---
@@ -133,8 +133,10 @@ $config = $dotEnv->loadPrivate('/path/to/app');
 
 `false`, `0` or `123456` as a password are the cast chain's blind spot: it turns them into
 `bool`/`int` before the caller ever sees the intended string. `addRawKeys()` registers
-keys/suffixes (case-insensitive, exact or suffix match, no substring match) that bypass casting
-entirely — the raw file/string value is returned as-is:
+keys/suffixes (case-insensitive, exact or suffix match, no substring match) whose values skip
+the built-in casts and stay strings. Raw means cast-free, not handler-free: handlers registered
+via `addHandler()` (e.g. the `SecretHandler` decrypting `secret(...)` values) still run for raw
+keys, in their chain order — only their string result is used:
 
 ```php
 $dotEnv = new DotEnv();
@@ -149,6 +151,7 @@ var_dump($config['DB_PASSWORD']); // string(5) "false" — not bool(false)
 The check applies at both cast sites: a plain `KEY=value` line and a `KEY_FILE=...` secret file —
 for the latter the **resolved** key is checked (`DB_PASSWORD_FILE` → rule matches `DB_PASSWORD`).
 Registrations accumulate and de-duplicate; there is no `removeRawKeys()`.
+`removeHandler()` also detaches a value handler from the raw path.
 
 ### String Input — Loading From a Secrets Manager
 
