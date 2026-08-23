@@ -88,6 +88,57 @@ class CastTypeHandlerTest extends TestCase
 
         $this->assertNull($result);
     }
+
+    public function testAddValueHandlerRunsInNormalChain(): void
+    {
+        $this->handler->addValueHandler(new StubCasterEnd());
+
+        $result = ($this->handler)('test_value');
+
+        $this->assertSame('test_value_end', $result);
+    }
+
+    public function testResolveRawValueSkipsCastsWithoutValueHandlers(): void
+    {
+        $result = $this->handler->resolveRawValue('false');
+
+        $this->assertSame('false', $result);
+    }
+
+    public function testResolveRawValueRunsOnlyValueHandlersNotCastInstances(): void
+    {
+        // Registered as a plain cast instance, not as a value handler: must not run on raw values.
+        $this->handler->setCastTypeInstance(new StubCasterEnd());
+
+        $result = $this->handler->resolveRawValue('test_value');
+
+        $this->assertSame('test_value', $result);
+    }
+
+    public function testResolveRawValueRunsValueHandlersInChainOrder(): void
+    {
+        $this->handler->addValueHandler(new StubValueSuffixA());
+        $this->handler->addValueHandler(new StubValueSuffixB(), prepend: true);
+
+        $result = $this->handler->resolveRawValue('x');
+
+        // Prepended B sits before appended A in the chain.
+        $this->assertSame('x_b_a', $result);
+    }
+
+    public function testResolveRawValueKeepsStringWhenHandlerReturnsNonString(): void
+    {
+        $this->handler->addValueHandler(new StubValueNonString());
+
+        $result = $this->handler->resolveRawValue('false');
+
+        $this->assertSame('false', $result);
+    }
+
+    public function testResolveRawValueNullReturnsNull(): void
+    {
+        $this->assertNull($this->handler->resolveRawValue(null));
+    }
 }
 
 /**
@@ -101,6 +152,39 @@ class StubCasterEnd
             return 'test_value_end';
         }
         return $value;
+    }
+}
+
+/**
+ * Value handler stub appending "_a" — proves chain order together with StubValueSuffixB
+ */
+class StubValueSuffixA
+{
+    public function __invoke(?string $value = null): ?string
+    {
+        return $value === null ? null : $value . '_a';
+    }
+}
+
+/**
+ * Value handler stub appending "_b"
+ */
+class StubValueSuffixB
+{
+    public function __invoke(?string $value = null): ?string
+    {
+        return $value === null ? null : $value . '_b';
+    }
+}
+
+/**
+ * Value handler stub returning a non-string — the raw path must keep the previous string
+ */
+class StubValueNonString
+{
+    public function __invoke(?string $value = null): bool
+    {
+        return false;
     }
 }
 

@@ -21,6 +21,9 @@ class CastTypeHandler
         CastStringToArray::class => null,
     ];
 
+    /** @var array<string, true> Class names registered as value handlers via addValueHandler() */
+    private array $valueHandlerClasses = [];
+
     private VariableRegistry $registry;
 
     public function __construct(?VariableRegistry $registry = null)
@@ -83,11 +86,45 @@ class CastTypeHandler
         }
     }
 
+    /**
+     * Registers an invokable instance as a value handler: it takes its chain position like any
+     * cast, but is additionally applied to raw-key values, where the plain casts are skipped.
+     */
+    public function addValueHandler(object $instance, bool $prepend = false): void
+    {
+        $this->setCastTypeInstance($instance, $prepend);
+        $this->valueHandlerClasses[get_class($instance)] = true;
+    }
+
+    /**
+     * Applies only the registered value handlers (in chain order) to a raw-key value. The
+     * built-in and setCastTypeClass()-registered casts are skipped, so the value stays a string.
+     */
+    public function resolveRawValue(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        foreach ($this->castTypeClasses as $castTypeHandlerClass => $castTypeHandler) {
+            if (!isset($this->valueHandlerClasses[$castTypeHandlerClass])) {
+                continue;
+            }
+
+            $result = is_callable($castTypeHandler) ? $castTypeHandler($value) : $value;
+            $value = is_string($result) ? $result : $value;
+        }
+
+        return $value;
+    }
+
     public function removeCastTypeClass(string $castTypeClass): void
     {
         if (array_key_exists($castTypeClass, $this->castTypeClasses)) {
             unset($this->castTypeClasses[$castTypeClass]);
         }
+
+        unset($this->valueHandlerClasses[$castTypeClass]);
     }
 
     private function createInstance(string $class): object

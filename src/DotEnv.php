@@ -99,7 +99,7 @@ class DotEnv implements DotEnvInterface
 
     public function addHandler(object $handler, bool $prepend = false): void
     {
-        $this->castTypeHandler->setCastTypeInstance($handler, $prepend);
+        $this->castTypeHandler->addValueHandler($handler, $prepend);
     }
 
     public function removeHandler(string $handlerClass): void
@@ -108,9 +108,10 @@ class DotEnv implements DotEnvInterface
     }
 
     /**
-     * Registers keys/suffixes (case-insensitive) that must skip the cast chain and survive as
-     * raw strings — e.g. credential suffixes like `_PASSWORD` where `false`/`123456` must not
-     * become bool/int. Accumulates and de-duplicates; there is no remove.
+     * Registers keys/suffixes (case-insensitive) whose values skip the built-in casts and
+     * survive as raw strings — e.g. credential suffixes like `_PASSWORD` where `false`/`123456`
+     * must not become bool/int. Handlers registered via addHandler() still run for these keys
+     * (raw means cast-free, not handler-free). Accumulates and de-duplicates; there is no remove.
      *
      * @param array<string> $keysOrSuffixes
      */
