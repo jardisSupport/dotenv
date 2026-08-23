@@ -1,6 +1,6 @@
 ---
 name: support-dotenv
-description: Load .env files with type casting, variable substitution, cascade loading, secret support. Use for DotEnv or env config.
+description: Load .env files (or .env-formatted strings) with type casting, variable substitution, cascade loading, raw-key cast exemptions, secret support. Use for DotEnv, addRawKeys, loadPublicFromString/loadPrivateFromString, or env config.
 user-invocable: false
 zone: post-active
 persona: C
@@ -9,13 +9,20 @@ next: [support-secret]
 ---
 
 # DOTENV_COMPONENT_SKILL
-> jardissupport/dotenv | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
+> jardissupport/dotenv v1.2 | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
 
 **Constructor:**
 ```php
-new DotEnv(?LoadFilesFromPath $fileFinder = null, ?LoadValuesFromFiles $fileContentReader = null)
+new DotEnv(
+    ?LoadFilesFromPath $fileFinder = null,
+    ?LoadValuesFromFiles $fileContentReader = null,
+    ?LoadValuesFromString $stringContentReader = null,
+    ?MatchesRawKey $matchesRawKey = null,
+)
 ```
-`CastTypeHandler` is created internally — not in constructor.
+`CastTypeHandler` is created internally — not in constructor. `DotEnvInterface` itself is
+unchanged since v1 (only `loadPublic`/`loadPrivate`) — `addRawKeys()` and the `*FromString()`
+methods are class-API additions (v1.2), reached via `new DotEnv()`, not the interface.
 
 ## TWO-STAGE LOADING
 1. Load `.env` + `.env.local`
@@ -30,9 +37,36 @@ $dotEnv->loadPrivate(string $path): array<string,mixed>  // no globals, returns 
 
 $dotEnv->addHandler(object $handler, bool $prepend = false): void   // invokable, else InvalidArgumentException
 $dotEnv->removeHandler(string $handlerClass): void
+
+$dotEnv->addRawKeys(array $keysOrSuffixes): void                   // case-insensitive, accumulates + dedupes, no remove
+
+$dotEnv->loadPublicFromString(string $content, ?string $baseDir = null): void          // like loadPublic(), no cascade
+$dotEnv->loadPrivateFromString(string $content, ?string $baseDir = null): array        // like loadPrivate(), no cascade
 ```
 `addHandler()` → `CastTypeHandler::setCastTypeInstance()`.  
 `removeHandler()` → `CastTypeHandler::removeCastTypeClass()`.
+`addRawKeys()` → `MatchesRawKey::addRawKeys()`.
+
+## RAW KEYS — cast-chain exemption by key (v1.2)
+Registers keys/suffixes that skip the whole cast chain and survive as the literal string — for
+values where a cast would corrupt them (e.g. `DB_PASSWORD=false`/`=123456` must stay `'false'`/
+`'123456'`, not become `bool`/`int`).
+```php
+$dotEnv->addRawKeys(['_PASSWORD', '_SECRET', 'DB_PORT']);  // suffix OR exact key, case-insensitive
+```
+- `MatchesRawKey::__invoke(string $key): bool` — `str_ends_with($upperKey, $rawKey)`; an exact key
+  is just a suffix equal to the whole string. **No substring match** (`'PASS'` does NOT match
+  `'BYPASS'` unless registered as `'BYPASS'` or a suffix of it).
+- Checked at **both** cast-chain entry points inside the reading engine — a plain `KEY=value` line
+  and the resolved key of a `KEY_FILE=...` secret-file reference (`DB_PASSWORD_FILE` → the rule is
+  evaluated against `DB_PASSWORD`, the key after `_FILE`-stripping, not the literal `_FILE` key).
+- Distinct from `jardissupport/secret`: secret decryption is **value-based** (a handler triggers on
+  the value's shape, e.g. `secret(aes:...)`); raw-key exemption is **key-based** (skips casting
+  regardless of value shape) — the handler chain is key-blind, so this could never be a handler.
+- Injection caveat (pre-existing, undocumented elsewhere): a raw key registered on one `DotEnv`
+  instance's internal reader does not retroactively apply if you construct a custom
+  `LoadValuesFromFiles`/`LoadValuesFromString` yourself and bypass `addRawKeys()` — always call
+  `addRawKeys()` on the `DotEnv` instance you actually load through.
 
 ## PUBLISH BEHAVIOR
 | Mode | `putenv` | `$_ENV` / `$_SERVER` | Return |
@@ -86,6 +120,24 @@ API_PORT_FILE=secrets/port                  # relative paths resolved from .env 
 - Missing file → `EnvFileNotFoundException`; unreadable → `EnvFileNotReadableException`
 - Combinable with `jardissupport/secret`: file contains `secret(aes:...)` → decrypted via cast chain
 
+## STRING INPUT (v1.2) — `loadPublicFromString` / `loadPrivateFromString`
+For content that never touches the filesystem (e.g. pulled from a secrets manager at runtime).
+```php
+$dotEnv = new DotEnv();
+$config = $dotEnv->loadPrivateFromString("DB_HOST=localhost\nDB_PORT=5432\n");
+$dotEnv->loadPublicFromString($content, baseDir: '/app/config');  // baseDir for relative KEY_FILE
+```
+- Same cast chain, same `${VAR}`/`~` substitution, same raw-key exemptions as the file path —
+  parity is by design (`LoadValuesFromRows` is the shared line-parsing engine both
+  `LoadValuesFromFiles` and `LoadValuesFromString` delegate to).
+- **No `APP_ENV` cascade** — a string has no directory to resolve `.{APP_ENV}` siblings against.
+- **`load(...)`/`load?(...)` directives are a hard error** (`IncludeNotSupportedException`) — no
+  file-system context to resolve an include path against.
+- **Relative `KEY_FILE=...` paths require `$baseDir`** — omit it and a relative path throws;
+  absolute `KEY_FILE` paths work with `$baseDir` omitted.
+- Line splitting: `preg_split('/\R/')` (CRLF/LF-agnostic), leading UTF-8 BOM stripped, only exactly
+  empty lines filtered (parity with `FILE_SKIP_EMPTY_LINES`).
+
 ## OPTIONAL SECRET SUPPORT
 ```php
 // composer require jardissupport/secret
@@ -101,6 +153,7 @@ $config = $dotEnv->loadPrivate('/path/to/app');
 | `CircularEnvIncludeException` | a.env → b.env → a.env | `getIncludeStack()` |
 | `EnvFileNotFoundException` | required `load()` missing or `_FILE` path not found | `getFilePath()` |
 | `EnvFileNotReadableException` | file not readable | `getFilePath()` |
+| `IncludeNotSupportedException` | `load()`/`load?()` used inside `*FromString()` input | — |
 
 NS: `JardisSupport\DotEnv\Exception` — all extend `DotEnvException`.
 
