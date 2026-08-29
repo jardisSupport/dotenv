@@ -85,6 +85,8 @@ Both modes: VariableRegistry populated identically → `${VAR}` and `~` work in 
 
 **Key edge cases:** `ENABLED=1` → `int(1)` via Numeric (NOT bool). `DEBUG=true` → `bool(true)`. `ZERO=0` → `int(0)`.
 
+**Empty value = `bool(false)`, by design (no fix — Bescheid Rolf 2026-08-29):** `KEY=` (empty string) passes Numeric (`is_numeric('')` is false) and lands in `CastStringToBool`, where `filter_var('', FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)` returns `false`, not `null`. Consumers that do `(string) $value` then get `''` — a `BackedEnum::from('')` throws (seen with `Mailer\Config\Encryption` in the license server, 2026-08-28). Rule: never leave a key empty to mean "unset" — omit the key, or give it an explicit sentinel the consumer understands (e.g. `MAIL_ENCRYPTION=none`); a key that must survive as the literal string goes through `addRawKeys()`.
+
 **Instance creation by `CastTypeHandler`:**
 - `CastStringToValue`, `CastUserHome` → `new $class($registry)`
 - `CastStringToNumeric`, `CastStringToBool` → `new $class()`
