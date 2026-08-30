@@ -6,6 +6,7 @@ namespace JardisSupport\DotEnv\Reader;
 
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
+use JardisSupport\DotEnv\Handler\SourceRegistry;
 use JardisSupport\DotEnv\Exception\CircularEnvIncludeException;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
@@ -13,6 +14,9 @@ use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
 /**
  * Reads and return all values from given files
  * Supports load() and load?() directives for including other .env files
+ *
+ * Each file passes its own realpath as origin to the row engine, so an included file records
+ * `file:<realpath of the include>`, not the one of the including file.
  */
 class LoadValuesFromFiles
 {
@@ -27,7 +31,8 @@ class LoadValuesFromFiles
         CastTypeHandler $castTypeHandler,
         ?ParseLoadDirective $parseLoadDirective = null,
         ?MatchesRawKey $matchesRawKey = null,
-        ?LoadValuesFromRows $loadValuesFromRows = null
+        ?LoadValuesFromRows $loadValuesFromRows = null,
+        ?SourceRegistry $sourceRegistry = null
     ) {
         $this->castTypeHandler = $castTypeHandler;
         $this->parseLoadDirective = $parseLoadDirective ?? new ParseLoadDirective();
@@ -36,7 +41,9 @@ class LoadValuesFromFiles
             $this->parseLoadDirective,
             $matchesRawKey,
             fn(array $directive, bool $public, ?string $baseDir): array =>
-                $this->processInclude($directive, $public, (string) $baseDir)
+                $this->processInclude($directive, $public, (string) $baseDir),
+            null,
+            $sourceRegistry
         );
     }
 
@@ -96,7 +103,12 @@ class LoadValuesFromFiles
                 throw new EnvFileNotReadableException($file);
             }
 
-            return $this->loadFileValues($rows, $public, dirname($realPath));
+            return $this->loadFileValues(
+                $rows,
+                $public,
+                dirname($realPath),
+                SourceRegistry::SOURCE_FILE_PREFIX . $realPath
+            );
         } finally {
             // Remove from stack after processing
             array_pop($this->includeStack);
@@ -107,14 +119,15 @@ class LoadValuesFromFiles
      * @param array<string> $rows
      * @param bool $public
      * @param string $baseDir Directory of the current file for resolving relative paths
+     * @param string|null $origin Origin recorded for these rows, i.e. `file:<realpath of the file>`
      * @return array<string, mixed>
      * @throws CircularEnvIncludeException
      * @throws EnvFileNotFoundException
      * @throws EnvFileNotReadableException
      */
-    protected function loadFileValues(array $rows, bool $public, string $baseDir): array
+    protected function loadFileValues(array $rows, bool $public, string $baseDir, ?string $origin = null): array
     {
-        return ($this->loadValuesFromRows)($rows, $public, $baseDir);
+        return ($this->loadValuesFromRows)($rows, $public, $baseDir, $origin);
     }
 
     /**

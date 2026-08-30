@@ -9,7 +9,7 @@ next: [support-secret]
 ---
 
 # DOTENV_COMPONENT_SKILL
-> jardissupport/dotenv v1.4 | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
+> jardissupport/dotenv v1.5 | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
 
 **Constructor:**
 ```php
@@ -18,6 +18,7 @@ new DotEnv(
     ?LoadValuesFromFiles $fileContentReader = null,
     ?LoadValuesFromString $stringContentReader = null,
     ?MatchesRawKey $matchesRawKey = null,
+    ?SourceRegistry $sourceRegistry = null,
 )
 ```
 `CastTypeHandler` is created internally — not in constructor. `DotEnvInterface` itself is
@@ -42,10 +43,13 @@ $dotEnv->addRawKeys(array $keysOrSuffixes): void                   // case-insen
 
 $dotEnv->loadPublicFromString(string $content, ?string $baseDir = null): void          // like loadPublic(), no cascade
 $dotEnv->loadPrivateFromString(string $content, ?string $baseDir = null): array        // like loadPrivate(), no cascade
+
+$dotEnv->sources(): array<string,string>                           // key => origin of the winning value
 ```
 `addHandler()` → `CastTypeHandler::setCastTypeInstance()`.  
 `removeHandler()` → `CastTypeHandler::removeCastTypeClass()`.
 `addRawKeys()` → `MatchesRawKey::addRawKeys()`.
+`sources()` → `SourceRegistry::all()`.
 
 ## RAW KEYS — cast-chain exemption by key (v1.2)
 Registers keys/suffixes that skip the whole cast chain and survive as the literal string — for
@@ -84,6 +88,33 @@ value parsed from a file or string — symfony/vlucas standard. One check, one p
   win over the file inside the container. Test isolation: unset used keys + the marker in
   `setUp`/`tearDown` (see `tests/bootstrap.php`).
 
+## SOURCES (v1.5.0) — per-key origin of the winning value
+`DotEnv::sources(): array<string,string>` answers "where did this value come from?" — needed
+because since v1.4.0 the process environment can silently beat the `.env` on screen. Class-API
+only; `DotEnvInterface` unchanged.
+
+Closed vocabulary, exactly three forms:
+| Origin | Set when |
+|--------|----------|
+| `env` | `ReadAmbientValue` won |
+| `file:<realpath>` | the line stands in that file |
+| `string` | the line came from `*FromString()` |
+
+- **Last assignment wins** — `.env` → `.env.local` cascade ends at `file:<…/.env.local>`.
+- **Include** — keys of `load(.env.database)` report `file:<…/.env.database>`, not the including
+  file (`LoadValuesFromFiles::loadFile` passes its own `realpath` as origin per file).
+- **`KEY_FILE=…`** — origin is the **line** (`file:<envfile>` / `string`), never the secret file;
+  the recorded key is the stripped one (`KEY`). Ambient `KEY` → `env`, secret file not read.
+- **Accumulates per instance** — never reset per `loadPublic`/`loadPrivate`/`*FromString` call;
+  `SourceRegistry::reset()` is internal/testing only.
+- **Never carries values** — origins only, safe to log.
+- One place: `Handler/SourceRegistry` (`record()`/`all()`/`reset()`), held by `DotEnv`, injected
+  into both readers and through them into `LoadValuesFromRows`
+  (`__invoke(array $rows, bool $public, ?string $baseDir, ?string $origin = null)`).
+- Injection caveat (same shape as raw keys): a `LoadValuesFromFiles`/`LoadValuesFromString` you
+  construct yourself and pass into `new DotEnv()` carries its own registry unless you hand the
+  same `SourceRegistry` to both — then `sources()` stays empty for it.
+
 ## PUBLISH BEHAVIOR
 | Mode | `putenv` | `$_ENV` / `$_SERVER` | Return |
 |------|----------|----------------------|--------|
@@ -115,6 +146,15 @@ $registry->set('KEY', 'raw_value');   // raw string before casting
 $registry->get('KEY');                // Registry first, getenv() fallback
 $registry->reset();                   // clear all entries
 ```
+
+## SOURCE REGISTRY
+```php
+$sources = new SourceRegistry();
+$sources->record('DB_HOST', 'file:/app/.env');  // last record per key wins
+$sources->all();                                // array<string,string>, no values
+$sources->reset();                              // clear all entries
+```
+Constants: `SOURCE_ENV = 'env'`, `SOURCE_STRING = 'string'`, `SOURCE_FILE_PREFIX = 'file:'`.
 
 ## INCLUDE SYSTEM
 ```env

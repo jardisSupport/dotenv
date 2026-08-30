@@ -6,6 +6,7 @@ namespace JardisSupport\DotEnv\Reader;
 
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
+use JardisSupport\DotEnv\Handler\SourceRegistry;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
 use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
@@ -22,13 +23,16 @@ class LoadValuesFromString
     public function __construct(
         CastTypeHandler $castTypeHandler,
         ?MatchesRawKey $matchesRawKey = null,
-        ?LoadValuesFromRows $loadValuesFromRows = null
+        ?LoadValuesFromRows $loadValuesFromRows = null,
+        ?SourceRegistry $sourceRegistry = null
     ) {
         $this->loadValuesFromRows = $loadValuesFromRows ?? new LoadValuesFromRows(
             $castTypeHandler,
             null,
             $matchesRawKey,
-            null
+            null,
+            null,
+            $sourceRegistry
         );
     }
 
@@ -42,7 +46,7 @@ class LoadValuesFromString
     {
         $rows = $this->splitRows($this->stripBom($content));
 
-        return ($this->loadValuesFromRows)($rows, $public, $baseDir);
+        return ($this->loadValuesFromRows)($rows, $public, $baseDir, SourceRegistry::SOURCE_STRING);
     }
 
     private function stripBom(string $content): string
