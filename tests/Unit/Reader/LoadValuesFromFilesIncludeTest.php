@@ -16,11 +16,29 @@ class LoadValuesFromFilesIncludeTest extends TestCase
     private LoadValuesFromFiles $loader;
     private string $fixturesPath;
 
+    /** @var string|false */
+    private $originalAppEnv;
+
     protected function setUp(): void
     {
         $this->castTypeHandler = new CastTypeHandler();
         $this->loader = new LoadValuesFromFiles($this->castTypeHandler);
         $this->fixturesPath = dirname(__DIR__, 2) . '/fixtures/include';
+
+        // A key set in the process environment wins over the file value, and the include cascade
+        // is driven by APP_ENV. These tests declare APP_ENV themselves (fixture or registry), so
+        // the ambient one (always set inside a container) is taken out of the way.
+        $this->originalAppEnv = getenv('APP_ENV');
+        putenv('APP_ENV');
+    }
+
+    protected function tearDown(): void
+    {
+        putenv('APP_ENV');
+
+        if (is_string($this->originalAppEnv)) {
+            putenv('APP_ENV=' . $this->originalAppEnv);
+        }
     }
 
     public function testBasicIncludeLoadsFile(): void

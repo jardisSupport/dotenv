@@ -7,6 +7,7 @@ namespace JardisSupport\DotEnv\Reader;
 use InvalidArgumentException;
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
+use JardisSupport\DotEnv\Handler\ReadAmbientValue;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
 use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
@@ -17,12 +18,18 @@ use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
  * resolution, raw-key cast exemption and publishing — everything that does not require file-system
  * recursion. Include resolution itself is delegated to an injected handler; without one, a load()
  * directive is a hard error (the string-loading caller has no file-system context to resolve it).
+ *
+ * Precedence: a key already set in the process environment beats the parsed value. The ambient
+ * value then runs through the same cast chain, raw-key exemption and registry write as a file
+ * value. Keys published by this library carry the JARDIS_DOTENV_VARS marker and never count as
+ * ambient, so the .env -> .env.local -> .env.{APP_ENV} cascade keeps overriding itself.
  */
 class LoadValuesFromRows
 {
     private CastTypeHandler $castTypeHandler;
     private ParseLoadDirective $parseLoadDirective;
     private MatchesRawKey $matchesRawKey;
+    private ReadAmbientValue $readAmbientValue;
 
     /** @var (callable(array{path: string, optional: bool}, bool, ?string): array<string, mixed>)|null */
     private $includeHandler;
@@ -34,12 +41,14 @@ class LoadValuesFromRows
         CastTypeHandler $castTypeHandler,
         ?ParseLoadDirective $parseLoadDirective = null,
         ?MatchesRawKey $matchesRawKey = null,
-        ?callable $includeHandler = null
+        ?callable $includeHandler = null,
+        ?ReadAmbientValue $readAmbientValue = null
     ) {
         $this->castTypeHandler = $castTypeHandler;
         $this->parseLoadDirective = $parseLoadDirective ?? new ParseLoadDirective();
         $this->matchesRawKey = $matchesRawKey ?? new MatchesRawKey();
         $this->includeHandler = $includeHandler;
+        $this->readAmbientValue = $readAmbientValue ?? new ReadAmbientValue();
     }
 
     /**
@@ -114,6 +123,13 @@ class LoadValuesFromRows
     {
         $resolvedKey = substr($fileKey, 0, -5);
 
+        // A key already set in the process environment wins; the secret file is not read at all.
+        $ambientValue = ($this->readAmbientValue)($resolvedKey);
+
+        if ($ambientValue !== null) {
+            return $this->assignValue($resolvedKey, $ambientValue, $public);
+        }
+
         // Resolve relative paths from the including file's directory
         if ($filePath !== '' && $filePath[0] !== '/') {
             if ($baseDir === null) {
@@ -141,6 +157,8 @@ class LoadValuesFromRows
      */
     private function assignValue(string $key, string $value, bool $public): array
     {
+        $value = ($this->readAmbientValue)($key) ?? $value;
+
         $this->castTypeHandler->getRegistry()->set($key, $value);
 
         // Raw keys skip the casts but still pass through registered value handlers.
@@ -165,6 +183,9 @@ class LoadValuesFromRows
      * arrays, which are stored as their raw string representation since arrays cannot be serialised
      * into an environment variable.
      *
+     * Every published key is additionally recorded in the JARDIS_DOTENV_VARS marker so that a
+     * later load does not mistake this library's own putenv() for a process-environment value.
+     *
      * @param string $key       The environment variable name.
      * @param string $value     The raw string value (as read from the .env file/string).
      * @param mixed  $castValue The type-cast value after the full handler chain.
@@ -175,5 +196,25 @@ class LoadValuesFromRows
         putenv("$key=$value");
         $_ENV[$key] = $publishValue;
         $_SERVER[$key] = $publishValue;
+        $this->markPublished($key);
+    }
+
+    /**
+     * Appends a key to the JARDIS_DOTENV_VARS marker (comma-separated, duplicate-free).
+     */
+    private function markPublished(string $key): void
+    {
+        $marker = getenv(ReadAmbientValue::MARKER_KEY);
+        $keys = is_string($marker) && $marker !== '' ? explode(',', $marker) : [];
+
+        if (in_array($key, $keys, true)) {
+            return;
+        }
+
+        $keys[] = $key;
+        $markerValue = implode(',', $keys);
+        putenv(ReadAmbientValue::MARKER_KEY . '=' . $markerValue);
+        $_ENV[ReadAmbientValue::MARKER_KEY] = $markerValue;
+        $_SERVER[ReadAmbientValue::MARKER_KEY] = $markerValue;
     }
 }

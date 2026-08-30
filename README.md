@@ -16,6 +16,7 @@ A .env loader for PHP with cascading overrides, variable interpolation, type cas
 ## Features
 
 - **Public/Private Loading** — `loadPublic()` writes to `$_ENV`/`$_SERVER`; `loadPrivate()` returns an isolated array without touching global state
+- **Process Environment Wins** — a key already set in the environment (container, CI pipeline, shell export) beats the value from the `.env` file, the industry-standard precedence; the library's own published values keep overriding each other via the `JARDIS_DOTENV_VARS` marker
 - **Cascading Overrides** — two-stage loading: base `.env` first, then `APP_ENV`-specific files (e.g. `.env.production`) override selectively
 - **Variable Interpolation** — `${VAR}` references are resolved against already-loaded values in the same file
 - **Type Casting Chain** — automatically converts strings to `bool`, numeric, JSON, and `array` via a chainable handler pipeline
@@ -90,6 +91,52 @@ $dotEnv->addHandler(
 // Stage 2 → .env.production + .env.production.local  (driven by APP_ENV)
 $config = $dotEnv->loadPrivate('/path/to/app');
 ```
+
+### Precedence — the Process Environment Wins
+
+A key that is **already set in the process environment** beats the value parsed from the `.env`
+file or string — the same precedence `symfony/dotenv` and `vlucas/phpdotenv` apply. A container,
+a CI pipeline or a plain `export` therefore configures the application without editing a file,
+and the committed `.env` stays the default, not the override:
+
+```bash
+DB_HOST=prod-db php bin/console   # .env says DB_HOST=localhost — prod-db wins
+```
+
+```php
+// .env: DB_HOST=localhost
+$config = (new DotEnv())->loadPrivate('/path/to/app');
+echo $config['DB_HOST']; // 'prod-db'
+```
+
+The rule holds for `loadPublic()`, `loadPrivate()`, `loadPublicFromString()`,
+`loadPrivateFromString()` and inside `load()` include cascades — it lives in the one engine all of
+them share. There is no opt-out.
+
+The winning value is not a shortcut past the rest of the pipeline: it runs through the same cast
+chain, the same raw-key exemption and the same `${VAR}` registry as a file value would, so
+`DEBUG=true` in the environment still arrives as `bool(true)` and a `${DB_HOST}` reference resolves
+against the winner.
+
+**Empty means unset.** `getenv()` must return a non-empty string for the environment to win —
+`DB_HOST=` counts as not set and the file value applies, consistent with how this library treats
+empty values elsewhere.
+
+**`_FILE` secrets.** If the **resolved** key is set in the environment, it wins and the secret file
+is never read — a missing `DB_PASSWORD_FILE` target raises no exception when `DB_PASSWORD` already
+comes from the environment:
+
+```env
+DB_PASSWORD_FILE=/run/secrets/db_password   # not read when DB_PASSWORD is in the environment
+```
+
+**The `JARDIS_DOTENV_VARS` marker.** `loadPublic()`/`loadPublicFromString()` write their values
+into the process environment via `putenv()`. Without a way to tell those apart from a genuine
+ambient value, the very first published key would beat every later one and the
+`.env` → `.env.local` → `.env.{APP_ENV}` cascade would collapse. Each published key is therefore
+recorded in the environment variable `JARDIS_DOTENV_VARS` (comma-separated, duplicate-free), and a
+key listed there never counts as ambient. The marker is process-wide and instance-independent by
+design: a second `loadPublic()` run in the same process overrides the first, exactly as before.
 
 ### Docker Secret Files (`_FILE` Pattern)
 
