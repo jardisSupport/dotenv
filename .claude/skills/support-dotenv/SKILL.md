@@ -9,7 +9,7 @@ next: [support-secret]
 ---
 
 # DOTENV_COMPONENT_SKILL
-> jardissupport/dotenv v1.2 | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
+> jardissupport/dotenv v1.4 | NS: `JardisSupport\DotEnv` | Implements: `DotEnvInterface` | PHP 8.2+
 
 **Constructor:**
 ```php
@@ -67,6 +67,22 @@ $dotEnv->addRawKeys(['_PASSWORD', '_SECRET', 'DB_PORT']);  // suffix OR exact ke
   instance's internal reader does not retroactively apply if you construct a custom
   `LoadValuesFromFiles`/`LoadValuesFromString` yourself and bypass `addRawKeys()` — always call
   `addRawKeys()` on the `DotEnv` instance you actually load through.
+
+## PRECEDENCE — process environment wins (v1.4.0, Bescheid Rolf 2026-08-30)
+A key that is **already set in the process environment** (`getenv()` non-empty string) beats the
+value parsed from a file or string — symfony/vlucas standard. One check, one place:
+`Handler/ReadAmbientValue::__invoke(string $key): ?string`, injected into `LoadValuesFromRows`.
+- Applies to `loadPublic`/`loadPrivate`/`*FromString` and every include cascade level.
+- The ambient value runs through the same cast chain, raw-key exemption and VariableRegistry write
+  (so `${VAR}` sees the winner). Empty env value (`KEY=`) = not set → file value applies.
+- `KEY_FILE=…`: when `KEY` is ambient the secret file is **not read** (no exception if missing).
+- Marker `JARDIS_DOTENV_VARS` (comma-separated, putenv + `$_ENV`/`$_SERVER`): every key this
+  library published via `loadPublic*()` is recorded there and **never counts as ambient** — that
+  keeps `.env → .env.local → .env.{APP_ENV}` overriding itself and lets a second `loadPublic()` win.
+  The marker inherits into child processes (proc_open/fork), same as symfony — by design.
+- No opt-out. Consequence for Docker: values a compose `environment:` list pushes into the container
+  win over the file inside the container. Test isolation: unset used keys + the marker in
+  `setUp`/`tearDown` (see `tests/bootstrap.php`).
 
 ## PUBLISH BEHAVIOR
 | Mode | `putenv` | `$_ENV` / `$_SERVER` | Return |
