@@ -110,6 +110,11 @@ class DotEnvTest extends TestCase
         unset($_ENV['APP_ENV']);
         putenv('APP_ENV');
 
+        // A process-environment HOME would win over the fixture's HOME line; this test is about
+        // the fixture value, so the ambient one set in setUp() is taken out of the way.
+        unset($_ENV['HOME'], $_SERVER['HOME']);
+        putenv('HOME');
+
         $homePath = dirname(__DIR__) . '/fixtures/home-override';
         $this->env->loadPublic($homePath);
 
@@ -121,6 +126,11 @@ class DotEnvTest extends TestCase
     {
         unset($_ENV['APP_ENV']);
         putenv('APP_ENV');
+
+        // A process-environment HOME would win over the fixture's HOME line; this test is about
+        // the fixture value, so the ambient one set in setUp() is taken out of the way.
+        unset($_ENV['HOME'], $_SERVER['HOME']);
+        putenv('HOME');
 
         $homePath = dirname(__DIR__) . '/fixtures/home-override';
         $result = $this->env->loadPrivate($homePath);
