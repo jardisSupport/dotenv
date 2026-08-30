@@ -16,9 +16,37 @@ class DotEnvRawKeysTest extends TestCase
 {
     private string $fixturesPath;
 
+    /** @var array<string> Temp directories created by makeAbsoluteFileSecretDir(), removed in tearDown. */
+    private array $tempDirs = [];
+
     protected function setUp(): void
     {
         $this->fixturesPath = dirname(__DIR__) . '/fixtures/raw-keys';
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->tempDirs as $tempDir) {
+            @unlink($tempDir . '/.env');
+            @rmdir($tempDir);
+        }
+    }
+
+    /**
+     * behaviour changed 2026-08-30: _FILE resolution requires an absolute path (Bescheid Rolf,
+     * Gabel G3 env-kollisionen). The static "file-secret" fixture used a relative path, which no
+     * longer resolves — this builds a temp .env pointing at the existing secret file by absolute
+     * path instead, to keep exercising the resolution+raw-key/cast interaction it always tested.
+     */
+    private function makeAbsoluteFileSecretDir(): string
+    {
+        $secretFile = $this->fixturesPath . '/file-secret/secrets/db_password';
+        $tempDir = sys_get_temp_dir() . '/dotenv-rawkeys-file-secret-' . uniqid();
+        mkdir($tempDir);
+        file_put_contents($tempDir . '/.env', 'DB_PASSWORD_FILE=' . $secretFile . "\n");
+        $this->tempDirs[] = $tempDir;
+
+        return $tempDir;
     }
 
     public function testUnregisteredKeyIsCastAsBeforeV1_1_5(): void
@@ -64,7 +92,7 @@ class DotEnvRawKeysTest extends TestCase
         $dotEnv = new DotEnv();
         $dotEnv->addRawKeys(['_PASSWORD']);
 
-        $result = $dotEnv->loadPrivate($this->fixturesPath . '/file-secret');
+        $result = $dotEnv->loadPrivate($this->makeAbsoluteFileSecretDir());
 
         // The _FILE suffix is stripped before the raw-key check: DB_PASSWORD_FILE -> DB_PASSWORD.
         $this->assertSame('false', $result['DB_PASSWORD']);
@@ -75,7 +103,7 @@ class DotEnvRawKeysTest extends TestCase
     {
         $dotEnv = new DotEnv();
 
-        $result = $dotEnv->loadPrivate($this->fixturesPath . '/file-secret');
+        $result = $dotEnv->loadPrivate($this->makeAbsoluteFileSecretDir());
 
         $this->assertFalse($result['DB_PASSWORD']);
     }
