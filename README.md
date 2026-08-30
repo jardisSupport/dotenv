@@ -24,7 +24,7 @@ A .env loader for PHP with cascading overrides, variable interpolation, type cas
 - **Home Path Expansion** — `~/` is expanded to the OS home directory in both loading modes
 - **Include Directives** — `load(.env.database)` and `load?(.env.optional)` split configuration across multiple files
 - **Circular Include Detection** — prevents infinite include loops with a typed `CircularEnvIncludeException`
-- **Docker `_FILE` Secret Resolution** — `DB_PASSWORD_FILE=/run/secrets/db_password` reads the file and exposes the content as `DB_PASSWORD`. Works with Docker Swarm, Kubernetes mounted secrets, and any file-based secret store. Combines with [`jardissupport/secret`](https://github.com/jardisSupport/secret) — a `_FILE` that contains `secret(aes:...)` is decrypted automatically through the cast chain
+- **Docker `_FILE` Secret Resolution** — `DB_PASSWORD_FILE=/run/secrets/db_password` reads the file and exposes the content as `DB_PASSWORD`. Works with Docker Swarm, Kubernetes mounted secrets, and any file-based secret store. Combines with [`jardissupport/secret`](https://github.com/jardisSupport/secret) — a `_FILE` that contains `secret(aes:...)` is decrypted automatically through the cast chain. **Absolute paths only** (since 2026-08-30) — a relative `..._FILE` value (e.g. `COMPOSE_FILE=support/docker-compose.yml`) is left as a plain string, because Docker/Kubernetes secret mounts are always absolute and `_FILE` is sometimes just a name suffix, not a secret command
 - **Extensible via `addHandler()`** — prepend or append custom cast handlers; remove built-in ones via `removeHandler()`
 - **Raw-Key Cast Exemption** — `addRawKeys()` marks keys/suffixes (e.g. `_PASSWORD`) whose values skip the built-in casts, so a credential like `DB_PASSWORD=false` survives as the string `'false'` instead of `bool(false)`. Handlers registered via `addHandler()` (e.g. secret decryption) still run for these keys
 - **String Input** — `loadPublicFromString()`/`loadPrivateFromString()` parse `.env`-formatted content that never touched disk (e.g. a secrets manager payload), reusing the same cast chain, variable substitution and `_FILE` resolution as file loading
@@ -131,6 +131,16 @@ comes from the environment:
 DB_PASSWORD_FILE=/run/secrets/db_password   # not read when DB_PASSWORD is in the environment
 ```
 
+Only an **absolute** `..._FILE` value is ever read as a secret file (since 2026-08-30) — Docker and
+Kubernetes secret mounts are always absolute paths. A relative value is a plain string with no file
+lookup, no key rename and no exception, because a project `.env` shared with Compose can carry stack
+keys that end in `_FILE` as a name, not a secret-mount command:
+
+```env
+COMPOSE_FILE=support/docker-compose.yml   # plain string — relative, so left alone
+NGINX_INDEX_FILE=index.php                # plain string — relative, so left alone
+```
+
 **The `JARDIS_DOTENV_VARS` marker.** `loadPublic()`/`loadPublicFromString()` write their values
 into the process environment via `putenv()`. Without a way to tell those apart from a genuine
 ambient value, the very first published key would beat every later one and the
@@ -199,6 +209,21 @@ echo $config['REDIS_TOKEN'];  // content of /run/secrets/redis_token
 // DB_PASSWORD_FILE / REDIS_TOKEN_FILE are NOT in the result
 ```
 
+**Absolute paths only.** Since 2026-08-30, resolution triggers only when the value starts with `/`
+— the industry pattern above is always absolute anyway. A relative `..._FILE` value is left as an
+ordinary string, key unchanged, no file read, no exception — this matters because a project `.env`
+shared with Docker Compose can itself carry unrelated `_FILE`-suffixed stack keys:
+
+```env
+COMPOSE_FILE=support/docker-compose.yml   # a Compose key, not a secret — stays a plain string
+```
+
+```php
+$config = (new DotEnv())->loadPrivate('/path/to/app');
+
+echo $config['COMPOSE_FILE'];  // 'support/docker-compose.yml' — no lookup, no rename
+```
+
 The `_FILE` suffix is stripped, the file content is read and passed through the full cast chain — variable substitution, type casting, and even secret decryption all work:
 
 ```env
@@ -259,12 +284,9 @@ exemption) with two differences dictated by having no file on disk:
 - A `load()`/`load?()` directive throws `IncludeNotSupportedException` — a string has no
   file-system context to resolve an include against.
 
-A relative `KEY_FILE=...` path needs an explicit base directory to resolve against; pass it as
-the second argument. An absolute path never needs one:
-
-```php
-$dotEnv->loadPrivateFromString($content, baseDir: '/path/to/secrets-dir');
-```
+The optional `baseDir` second argument is kept for backward compatibility but has no effect since
+2026-08-30: `KEY_FILE` resolution only ever considers absolute paths, so there is no relative path
+left to resolve against it.
 
 ## Documentation
 

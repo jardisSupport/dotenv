@@ -37,6 +37,8 @@ class LoadValuesFromString
     }
 
     /**
+     * @param string|null $baseDir Kept for backward compatibility; unused since 2026-08-30 — KEY_FILE
+     *                             resolution now only ever considers absolute paths.
      * @return array<string, mixed>
      * @throws EnvFileNotFoundException
      * @throws EnvFileNotReadableException

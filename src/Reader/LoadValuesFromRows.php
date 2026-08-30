@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace JardisSupport\DotEnv\Reader;
 
-use InvalidArgumentException;
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
 use JardisSupport\DotEnv\Handler\ReadAmbientValue;
@@ -19,6 +18,11 @@ use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
  * resolution, raw-key cast exemption and publishing — everything that does not require file-system
  * recursion. Include resolution itself is delegated to an injected handler; without one, a load()
  * directive is a hard error (the string-loading caller has no file-system context to resolve it).
+ *
+ * _FILE resolution (Bescheid Rolf 2026-08-30): only an ABSOLUTE path (starts with "/") triggers
+ * secret-file resolution — Docker/Kubernetes secret mounts are always absolute. A relative "_FILE"
+ * value (e.g. `COMPOSE_FILE=support/docker-compose.yml`, `NGINX_INDEX_FILE=index.php`) is a plain
+ * key with a plain string value: no file lookup, no key rename, no exception.
  *
  * Precedence: a key already set in the process environment beats the parsed value. The ambient
  * value then runs through the same cast chain, raw-key exemption and registry write as a file
@@ -98,9 +102,11 @@ class LoadValuesFromRows
             $key = trim($key);
             $value = $value !== '' ? trim($value) : $value;
 
-            // Resolve _FILE suffix: read file content as value
-            if (str_ends_with($key, '_FILE') && strlen($key) > 5) {
-                $fileResult = $this->resolveFileValue($key, $value, $public, $baseDir, $origin);
+            // Resolve _FILE suffix: read file content as value, but only for an absolute path —
+            // a relative "_FILE" value is a plain string (e.g. stack keys like COMPOSE_FILE or
+            // NGINX_INDEX_FILE, where "_FILE" is a name suffix, not a secret-mount command).
+            if (str_ends_with($key, '_FILE') && strlen($key) > 5 && $value !== '' && $value[0] === '/') {
+                $fileResult = $this->resolveFileValue($key, $value, $public, $origin);
                 $result = array_merge($result, $fileResult);
                 continue;
             }
@@ -126,6 +132,10 @@ class LoadValuesFromRows
     }
 
     /**
+     * Resolves an absolute "_FILE" path to its file content. Callers only reach this for values
+     * starting with "/" — a relative value is treated as a plain string upstream and never enters
+     * here (Bescheid Rolf 2026-08-30: "_FILE" secret resolution applies to absolute paths only).
+     *
      * @return array<string, mixed>
      * @throws EnvFileNotFoundException
      * @throws EnvFileNotReadableException
@@ -134,7 +144,6 @@ class LoadValuesFromRows
         string $fileKey,
         string $filePath,
         bool $public,
-        ?string $baseDir,
         ?string $origin = null
     ): array {
         $resolvedKey = substr($fileKey, 0, -5);
@@ -144,15 +153,6 @@ class LoadValuesFromRows
 
         if ($ambientValue !== null) {
             return $this->assignValue($resolvedKey, $ambientValue, $public, $origin);
-        }
-
-        // Resolve relative paths from the including file's directory
-        if ($filePath !== '' && $filePath[0] !== '/') {
-            if ($baseDir === null) {
-                $message = 'Relative "' . $fileKey . '" path requires a base directory: ' . $filePath;
-                throw new InvalidArgumentException($message);
-            }
-            $filePath = $baseDir . '/' . $filePath;
         }
 
         if (!file_exists($filePath)) {
