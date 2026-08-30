@@ -11,10 +11,27 @@ class LoadValuesFromFilesTest extends TestCase
     private CastTypeHandler $castTypeHandler;
     private LoadValuesFromFiles $loadValuesFromFiles;
 
+    /** @var string|false */
+    private $originalHome;
+
     protected function setUp(): void
     {
         $this->castTypeHandler = $this->createMock(CastTypeHandler::class);
         $this->loadValuesFromFiles = new LoadValuesFromFiles($this->castTypeHandler);
+
+        // A key set in the process environment wins over the file value. The fixture defines its
+        // own HOME, so the ambient HOME (always set inside a container) is taken out of the way.
+        $this->originalHome = getenv('HOME');
+        putenv('HOME');
+    }
+
+    protected function tearDown(): void
+    {
+        putenv('HOME');
+
+        if (is_string($this->originalHome)) {
+            putenv('HOME=' . $this->originalHome);
+        }
     }
 
     public function testReturnsMergedValuesNotPublic()
