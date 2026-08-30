@@ -17,6 +17,7 @@ A .env loader for PHP with cascading overrides, variable interpolation, type cas
 
 - **Public/Private Loading** — `loadPublic()` writes to `$_ENV`/`$_SERVER`; `loadPrivate()` returns an isolated array without touching global state
 - **Process Environment Wins** — a key already set in the environment (container, CI pipeline, shell export) beats the value from the `.env` file, the industry-standard precedence; the library's own published values keep overriding each other via the `JARDIS_DOTENV_VARS` marker
+- **Source Visibility** — `sources()` answers "where did this value come from?" per key: `env`, `file:<realpath>` or `string`, so a value silently won by the process environment is never mistaken for the `.env` on screen
 - **Cascading Overrides** — two-stage loading: base `.env` first, then `APP_ENV`-specific files (e.g. `.env.production`) override selectively
 - **Variable Interpolation** — `${VAR}` references are resolved against already-loaded values in the same file
 - **Type Casting Chain** — automatically converts strings to `bool`, numeric, JSON, and `array` via a chainable handler pipeline
@@ -137,6 +138,46 @@ ambient value, the very first published key would beat every later one and the
 recorded in the environment variable `JARDIS_DOTENV_VARS` (comma-separated, duplicate-free), and a
 key listed there never counts as ambient. The marker is process-wide and instance-independent by
 design: a second `loadPublic()` run in the same process overrides the first, exactly as before.
+
+### Sources — Where Did a Value Come From?
+
+Because the process environment wins, the value an application runs on can come from somewhere
+other than the `.env` the developer is looking at. `sources()` names that origin per key:
+
+```php
+$dotEnv = new DotEnv();
+$config = $dotEnv->loadPrivate('/path/to/app');
+
+$dotEnv->sources();
+// [
+//   'DB_HOST'     => 'env',                            // won by the process environment
+//   'DB_PORT'     => 'file:/path/to/app/.env',         // parsed from this file
+//   'MAIL_DSN'    => 'file:/path/to/app/.env.local',   // overridden later in the cascade
+//   'API_KEY'     => 'string',                         // from loadPrivateFromString()
+// ]
+```
+
+The vocabulary is closed — exactly three forms:
+
+| Origin | Meaning |
+|--------|---------|
+| `env` | the process environment won (`ReadAmbientValue`) |
+| `file:<realpath>` | parsed from that file |
+| `string` | parsed from `loadPublicFromString()`/`loadPrivateFromString()` input |
+
+- **Cascade:** the last assignment wins, so a key set in `.env` and again in `.env.local` reports
+  `file:<…/.env.local>`.
+- **Includes:** a key reports the file its line stands in — `load(.env.database)` makes the keys of
+  that file report `file:<…/.env.database>`, not the including `.env`.
+- **`_FILE` secrets:** the origin is the **line**, i.e. the `.env` (or `string`) that carries
+  `DB_PASSWORD_FILE=…`, not the secret file it points at; the key reported is the stripped one
+  (`DB_PASSWORD`). If the environment wins, it is `env` and the secret file is never read.
+- **Accumulates:** the map is per instance and never reset between load calls, so several loads on
+  one `DotEnv` give the full picture.
+- **Values are never included** — only origins. `sources()` is safe to log or print next to a
+  configuration dump.
+
+`sources()` is a class-API addition; `DotEnvInterface` is unchanged.
 
 ### Docker Secret Files (`_FILE` Pattern)
 

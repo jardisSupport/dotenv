@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
 use JardisSupport\DotEnv\Handler\ReadAmbientValue;
+use JardisSupport\DotEnv\Handler\SourceRegistry;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
 use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
@@ -23,6 +24,11 @@ use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
  * value then runs through the same cast chain, raw-key exemption and registry write as a file
  * value. Keys published by this library carry the JARDIS_DOTENV_VARS marker and never count as
  * ambient, so the .env -> .env.local -> .env.{APP_ENV} cascade keeps overriding itself.
+ *
+ * Source tracking: every assignment records the origin of the winning value in the SourceRegistry —
+ * `env` when the process environment won, otherwise the origin the caller passed for these rows
+ * (`file:<realpath>` or `string`). Rows invoked without an origin record nothing unless the process
+ * environment won, because there is no origin to name.
  */
 class LoadValuesFromRows
 {
@@ -30,6 +36,7 @@ class LoadValuesFromRows
     private ParseLoadDirective $parseLoadDirective;
     private MatchesRawKey $matchesRawKey;
     private ReadAmbientValue $readAmbientValue;
+    private SourceRegistry $sourceRegistry;
 
     /** @var (callable(array{path: string, optional: bool}, bool, ?string): array<string, mixed>)|null */
     private $includeHandler;
@@ -42,23 +49,27 @@ class LoadValuesFromRows
         ?ParseLoadDirective $parseLoadDirective = null,
         ?MatchesRawKey $matchesRawKey = null,
         ?callable $includeHandler = null,
-        ?ReadAmbientValue $readAmbientValue = null
+        ?ReadAmbientValue $readAmbientValue = null,
+        ?SourceRegistry $sourceRegistry = null
     ) {
         $this->castTypeHandler = $castTypeHandler;
         $this->parseLoadDirective = $parseLoadDirective ?? new ParseLoadDirective();
         $this->matchesRawKey = $matchesRawKey ?? new MatchesRawKey();
         $this->includeHandler = $includeHandler;
         $this->readAmbientValue = $readAmbientValue ?? new ReadAmbientValue();
+        $this->sourceRegistry = $sourceRegistry ?? new SourceRegistry();
     }
 
     /**
      * @param array<string> $rows
+     * @param string|null $origin Origin recorded for values these rows win with — `file:<realpath>`
+     *                            or `string`; null records no file/string origin.
      * @return array<string, mixed>
      * @throws EnvFileNotFoundException
      * @throws EnvFileNotReadableException
      * @throws IncludeNotSupportedException
      */
-    public function __invoke(array $rows, bool $public, ?string $baseDir): array
+    public function __invoke(array $rows, bool $public, ?string $baseDir, ?string $origin = null): array
     {
         $result = [];
 
@@ -89,12 +100,12 @@ class LoadValuesFromRows
 
             // Resolve _FILE suffix: read file content as value
             if (str_ends_with($key, '_FILE') && strlen($key) > 5) {
-                $fileResult = $this->resolveFileValue($key, $value, $public, $baseDir);
+                $fileResult = $this->resolveFileValue($key, $value, $public, $baseDir, $origin);
                 $result = array_merge($result, $fileResult);
                 continue;
             }
 
-            $result = array_merge($result, $this->assignValue($key, $value, $public));
+            $result = array_merge($result, $this->assignValue($key, $value, $public, $origin));
         }
 
         return $result;
@@ -119,15 +130,20 @@ class LoadValuesFromRows
      * @throws EnvFileNotFoundException
      * @throws EnvFileNotReadableException
      */
-    private function resolveFileValue(string $fileKey, string $filePath, bool $public, ?string $baseDir): array
-    {
+    private function resolveFileValue(
+        string $fileKey,
+        string $filePath,
+        bool $public,
+        ?string $baseDir,
+        ?string $origin = null
+    ): array {
         $resolvedKey = substr($fileKey, 0, -5);
 
         // A key already set in the process environment wins; the secret file is not read at all.
         $ambientValue = ($this->readAmbientValue)($resolvedKey);
 
         if ($ambientValue !== null) {
-            return $this->assignValue($resolvedKey, $ambientValue, $public);
+            return $this->assignValue($resolvedKey, $ambientValue, $public, $origin);
         }
 
         // Resolve relative paths from the including file's directory
@@ -149,15 +165,23 @@ class LoadValuesFromRows
 
         $value = trim(file_get_contents($filePath) ?: '');
 
-        return $this->assignValue($resolvedKey, $value, $public);
+        return $this->assignValue($resolvedKey, $value, $public, $origin);
     }
 
     /**
+     * Assigns the winning value for a key and records its origin.
+     *
      * @return array<string, mixed>
      */
-    private function assignValue(string $key, string $value, bool $public): array
+    private function assignValue(string $key, string $value, bool $public, ?string $origin = null): array
     {
-        $value = ($this->readAmbientValue)($key) ?? $value;
+        $ambientValue = ($this->readAmbientValue)($key);
+        $value = $ambientValue ?? $value;
+
+        $source = $ambientValue !== null ? SourceRegistry::SOURCE_ENV : $origin;
+        if ($source !== null) {
+            $this->sourceRegistry->record($key, $source);
+        }
 
         $this->castTypeHandler->getRegistry()->set($key, $value);
 

@@ -6,6 +6,7 @@ namespace JardisSupport\DotEnv;
 
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
+use JardisSupport\DotEnv\Handler\SourceRegistry;
 use JardisSupport\DotEnv\Exception\CircularEnvIncludeException;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
 use JardisSupport\DotEnv\Exception\EnvFileNotReadableException;
@@ -25,24 +26,31 @@ class DotEnv implements DotEnvInterface
     private LoadValuesFromString $loadValuesFromString;
     private CastTypeHandler $castTypeHandler;
     private MatchesRawKey $matchesRawKey;
+    private SourceRegistry $sourceRegistry;
 
     public function __construct(
         ?LoadFilesFromPath $fileFinder = null,
         ?LoadValuesFromFiles $fileContentReader = null,
         ?LoadValuesFromString $stringContentReader = null,
-        ?MatchesRawKey $matchesRawKey = null
+        ?MatchesRawKey $matchesRawKey = null,
+        ?SourceRegistry $sourceRegistry = null
     ) {
         $this->loadFilesFromPath = $fileFinder ?? new LoadFilesFromPath();
         $this->castTypeHandler = new CastTypeHandler();
         $this->matchesRawKey = $matchesRawKey ?? new MatchesRawKey();
+        $this->sourceRegistry = $sourceRegistry ?? new SourceRegistry();
         $this->loadValuesFromFiles = $fileContentReader ?? new LoadValuesFromFiles(
             $this->castTypeHandler,
             null,
-            $this->matchesRawKey
+            $this->matchesRawKey,
+            null,
+            $this->sourceRegistry
         );
         $this->loadValuesFromString = $stringContentReader ?? new LoadValuesFromString(
             $this->castTypeHandler,
-            $this->matchesRawKey
+            $this->matchesRawKey,
+            null,
+            $this->sourceRegistry
         );
     }
 
@@ -151,6 +159,22 @@ class DotEnv implements DotEnvInterface
     public function loadPrivateFromString(string $content, ?string $baseDir = null): array
     {
         return ($this->loadValuesFromString)($content, false, $baseDir);
+    }
+
+    /**
+     * Returns the origin of the last value assigned to each key across every load call on this
+     * instance: `env` (process environment), `file:<realpath>` (that file) or `string` (string
+     * input). A `KEY_FILE=...` line reports the origin of the line, not of the secret file.
+     * Never contains values, only origins. Accumulates; it is not reset per load call.
+     *
+     * A reader injected through the constructor carries its own SourceRegistry unless the same
+     * instance is passed here too — then it does not feed this result.
+     *
+     * @return array<string, string> Key => origin of the winning value
+     */
+    public function sources(): array
+    {
+        return $this->sourceRegistry->all();
     }
 
     private function resolveAppEnv(): ?string
