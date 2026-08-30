@@ -170,9 +170,14 @@ load?(.env.local)             # optional — silent skip
 ## FILE SECRET RESOLUTION (`_FILE` PATTERN)
 ```env
 DB_PASSWORD_FILE=/run/secrets/db_password   # → DB_PASSWORD = trimmed file content
-API_PORT_FILE=secrets/port                  # relative paths resolved from .env directory
+COMPOSE_FILE=support/docker-compose.yml     # relative -> plain string, "COMPOSE" untouched
 ```
-- `KEY_FILE` suffix stripped → becomes `KEY`
+- **Absolute path only** (Bescheid Rolf 2026-08-30) — a `_FILE` value is resolved as a secret file
+  only when it starts with `/`; Docker/Kubernetes secret mounts are always absolute. A relative
+  value is an ordinary key/string, no lookup, no rename, no exception — needed because a project
+  `.env` shared with Compose carries unrelated `_FILE`-suffixed stack keys (`COMPOSE_FILE`,
+  `NGINX_INDEX_FILE`).
+- `KEY_FILE` suffix stripped → becomes `KEY` (absolute case only)
 - File content trimmed, passed through full cast chain
 - Raw value registered in VariableRegistry (for `${VAR}` refs)
 - Missing file → `EnvFileNotFoundException`; unreadable → `EnvFileNotReadableException`
@@ -183,7 +188,7 @@ For content that never touches the filesystem (e.g. pulled from a secrets manage
 ```php
 $dotEnv = new DotEnv();
 $config = $dotEnv->loadPrivateFromString("DB_HOST=localhost\nDB_PORT=5432\n");
-$dotEnv->loadPublicFromString($content, baseDir: '/app/config');  // baseDir for relative KEY_FILE
+$dotEnv->loadPublicFromString($content, baseDir: '/app/config');  // baseDir kept but unused since 2026-08-30
 ```
 - Same cast chain, same `${VAR}`/`~` substitution, same raw-key exemptions as the file path —
   parity is by design (`LoadValuesFromRows` is the shared line-parsing engine both
@@ -191,8 +196,8 @@ $dotEnv->loadPublicFromString($content, baseDir: '/app/config');  // baseDir for
 - **No `APP_ENV` cascade** — a string has no directory to resolve `.{APP_ENV}` siblings against.
 - **`load(...)`/`load?(...)` directives are a hard error** (`IncludeNotSupportedException`) — no
   file-system context to resolve an include path against.
-- **Relative `KEY_FILE=...` paths require `$baseDir`** — omit it and a relative path throws;
-  absolute `KEY_FILE` paths work with `$baseDir` omitted.
+- **`KEY_FILE=...` resolution is absolute-only (2026-08-30)** — a relative value is a plain string
+  regardless of `$baseDir`; the parameter is kept for backward compatibility but has no effect.
 - Line splitting: `preg_split('/\R/')` (CRLF/LF-agnostic), leading UTF-8 BOM stripped, only exactly
   empty lines filtered (parity with `FILE_SKIP_EMPTY_LINES`).
 

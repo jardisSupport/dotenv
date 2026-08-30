@@ -34,6 +34,9 @@ class DotEnvSourcesTest extends TestCase
 
     private string $fixturesPath;
 
+    /** @var array<string> Temp directories created by makeAbsoluteFileSecretDir(), removed in tearDown. */
+    private array $tempDirs = [];
+
     protected function setUp(): void
     {
         $this->fixturesPath = dirname(__DIR__) . '/fixtures/sources';
@@ -68,6 +71,28 @@ class DotEnvSourcesTest extends TestCase
                 $_SERVER[$key] = $serverValue;
             }
         }
+
+        foreach ($this->tempDirs as $tempDir) {
+            @unlink($tempDir . '/.env');
+            @rmdir($tempDir);
+        }
+    }
+
+    /**
+     * behaviour changed 2026-08-30: _FILE resolution requires an absolute path (Bescheid Rolf,
+     * Gabel G3 env-kollisionen). The static "file-secret" fixture used a relative path, which no
+     * longer resolves — this builds a temp .env pointing at the existing secret.txt by absolute
+     * path instead, to keep exercising the source-tracking behaviour it always tested.
+     */
+    private function makeAbsoluteFileSecretDir(): string
+    {
+        $secretFile = $this->fixturesPath . '/file-secret/secret.txt';
+        $tempDir = sys_get_temp_dir() . '/dotenv-sources-file-secret-' . uniqid();
+        mkdir($tempDir);
+        file_put_contents($tempDir . '/.env', 'DB_PASSWORD_FILE=' . $secretFile . "\n");
+        $this->tempDirs[] = $tempDir;
+
+        return $tempDir;
     }
 
     /** 1: loadPrivate — a key from .env reports that file. */
@@ -141,15 +166,17 @@ class DotEnvSourcesTest extends TestCase
     /** 7: KEY_FILE — the origin is the .env line, not the secret file; the key is the stripped one. */
     public function test07FileSecretReportsTheEnvFileNotTheSecretFile(): void
     {
+        $tempDir = $this->makeAbsoluteFileSecretDir();
+
         $dotEnv = new DotEnv();
-        $dotEnv->loadPrivate($this->fixturesPath . '/file-secret');
+        $dotEnv->loadPrivate($tempDir);
 
         $sources = $dotEnv->sources();
 
         $this->assertArrayHasKey('DB_PASSWORD', $sources);
         $this->assertArrayNotHasKey('DB_PASSWORD_FILE', $sources);
         $this->assertSame(
-            'file:' . realpath($this->fixturesPath . '/file-secret/.env'),
+            'file:' . realpath($tempDir . '/.env'),
             $sources['DB_PASSWORD']
         );
         $this->assertNotSame(
@@ -164,7 +191,7 @@ class DotEnvSourcesTest extends TestCase
         putenv('DB_PASSWORD=ambient');
 
         $dotEnv = new DotEnv();
-        $dotEnv->loadPrivate($this->fixturesPath . '/file-secret');
+        $dotEnv->loadPrivate($this->makeAbsoluteFileSecretDir());
 
         $this->assertSame('env', $dotEnv->sources()['DB_PASSWORD']);
     }

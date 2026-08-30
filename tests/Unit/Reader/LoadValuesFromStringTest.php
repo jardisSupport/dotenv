@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace JardisSupport\DotEnv\Tests\Unit\Reader;
 
-use InvalidArgumentException;
 use JardisSupport\DotEnv\Handler\CastTypeHandler;
 use JardisSupport\DotEnv\Handler\MatchesRawKey;
 use JardisSupport\DotEnv\Exception\EnvFileNotFoundException;
@@ -92,20 +91,24 @@ class LoadValuesFromStringTest extends TestCase
         $this->assertArrayNotHasKey('DB_PASSWORD_FILE', $result);
     }
 
-    public function testRelativeKeyFileWithoutBaseDirThrows(): void
+    // behaviour changed 2026-08-30: relative _FILE values are plain strings (Bescheid Rolf,
+    // Gabel G3 env-kollisionen) — no file lookup, no key rename, no exception.
+    public function testRelativeKeyFileValueIsPlainStringNotResolved(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $result = ($this->loader)("DB_PASSWORD_FILE=secrets/db_password\n", false);
 
-        ($this->loader)("DB_PASSWORD_FILE=secrets/db_password\n", false);
+        $this->assertSame('secrets/db_password', $result['DB_PASSWORD_FILE']);
+        $this->assertArrayNotHasKey('DB_PASSWORD', $result);
     }
 
-    public function testRelativeKeyFileWithBaseDirIsResolved(): void
+    public function testRelativeKeyFileValueIgnoresBaseDir(): void
     {
         $baseDir = $this->fixturesPath . '/raw-keys/file-secret';
 
         $result = ($this->loader)("DB_PASSWORD_FILE=secrets/db_password\n", false, $baseDir);
 
-        $this->assertFalse($result['DB_PASSWORD']);
+        $this->assertSame('secrets/db_password', $result['DB_PASSWORD_FILE']);
+        $this->assertArrayNotHasKey('DB_PASSWORD', $result);
     }
 
     public function testMissingAbsoluteKeyFileThrows(): void

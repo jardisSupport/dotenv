@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace JardisSupport\DotEnv\Tests\Unit;
 
-use InvalidArgumentException;
 use JardisSupport\DotEnv\DotEnv;
 use JardisSupport\DotEnv\Exception\IncludeNotSupportedException;
 use PHPUnit\Framework\TestCase;
@@ -59,22 +58,26 @@ class DotEnvStringApiTest extends TestCase
         $dotEnv->loadPrivateFromString("load(.env.database)\n");
     }
 
-    public function testRelativeKeyFileWithoutBaseDirThrows(): void
+    // behaviour changed 2026-08-30: relative _FILE values are plain strings (Bescheid Rolf,
+    // Gabel G3 env-kollisionen) — no file lookup, no key rename, no exception, baseDir irrelevant.
+    public function testRelativeKeyFileValueIsPlainStringWithoutBaseDir(): void
     {
         $dotEnv = new DotEnv();
 
-        $this->expectException(InvalidArgumentException::class);
+        $result = $dotEnv->loadPrivateFromString("DB_PASSWORD_FILE=secrets/db_password\n");
 
-        $dotEnv->loadPrivateFromString("DB_PASSWORD_FILE=secrets/db_password\n");
+        $this->assertSame('secrets/db_password', $result['DB_PASSWORD_FILE']);
+        $this->assertArrayNotHasKey('DB_PASSWORD', $result);
     }
 
-    public function testRelativeKeyFileWithBaseDirResolves(): void
+    public function testRelativeKeyFileValueIsPlainStringEvenWithBaseDir(): void
     {
         $dotEnv = new DotEnv();
         $baseDir = $this->fixturesPath . '/raw-keys/file-secret';
 
         $result = $dotEnv->loadPrivateFromString("DB_PASSWORD_FILE=secrets/db_password\n", $baseDir);
 
-        $this->assertFalse($result['DB_PASSWORD']);
+        $this->assertSame('secrets/db_password', $result['DB_PASSWORD_FILE']);
+        $this->assertArrayNotHasKey('DB_PASSWORD', $result);
     }
 }

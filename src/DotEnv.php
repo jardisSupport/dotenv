@@ -133,8 +133,9 @@ class DotEnv implements DotEnvInterface
      * No APP_ENV cascade; a load()/load?() directive is a hard error (no file-system context).
      *
      * @param string $content .env-formatted content (e.g. from a secrets manager)
-     * @param string|null $baseDir Base directory for resolving relative KEY_FILE paths; required
-     *                             if the content contains a KEY_FILE with a relative path
+     * @param string|null $baseDir Kept for backward compatibility; unused since 2026-08-30 —
+     *                             KEY_FILE resolution now only ever considers absolute paths, so
+     *                             there is no relative path left to resolve against it.
      * @throws IncludeNotSupportedException
      * @throws EnvFileNotFoundException
      * @throws EnvFileNotReadableException
@@ -149,8 +150,9 @@ class DotEnv implements DotEnvInterface
      * loadPrivate() does. No APP_ENV cascade; a load()/load?() directive is a hard error.
      *
      * @param string $content .env-formatted content (e.g. from a secrets manager)
-     * @param string|null $baseDir Base directory for resolving relative KEY_FILE paths; required
-     *                             if the content contains a KEY_FILE with a relative path
+     * @param string|null $baseDir Kept for backward compatibility; unused since 2026-08-30 —
+     *                             KEY_FILE resolution now only ever considers absolute paths, so
+     *                             there is no relative path left to resolve against it.
      * @return array<string, mixed>
      * @throws IncludeNotSupportedException
      * @throws EnvFileNotFoundException
