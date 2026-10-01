@@ -4,7 +4,7 @@ description: Load .env files (or .env-formatted strings) with type casting, vari
 user-invocable: false
 zone: post-active
 persona: C
-prerequisites: [rules-architecture, rules-patterns]
+prerequisites: [foundation-architecture, foundation-patterns]
 next: [support-secret]
 ---
 
